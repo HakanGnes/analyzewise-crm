@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "analyzewise-crm"
+version = "0.2.0"
+description = "RFM / CLTV / ürün öneri analiz kütüphanesi (AnalyzeWise-CRM'in çekirdek mantığı)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.1",
+    "numpy>=1.26",
+    "scikit-learn>=1.4",
+    "xgboost>=2.0",
+    "Lifetimes>=0.11.3",
+    "mlxtend>=0.23",
+    "openpyxl>=3.1",
+]
+
+[tool.setuptools.packages.find]
+include = ["analyzewise_crm*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

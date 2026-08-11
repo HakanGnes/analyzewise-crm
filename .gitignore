@@ -1,0 +1,28 @@
+@"
+# python virtual envs anywhere in the repo (any name — venv, venv3, .venv, env)
+**/venv*/
+**/.venv/
+**/env/
+
+# backend
+backend/__pycache__/
+backend/**/__pycache__/
+backend/*.pyc
+backend/.pytest_cache/
+backend/*.egg-info/
+
+# real customer data — never push this, wherever it sits in the repo
+data/*.xlsx
+data/*.csv
+backend/data/*.xlsx
+backend/data/*.csv
+
+# frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# misc
+.DS_Store
+*.log
+"@ | Set-Content .gitignore
