@@ -1,0 +1,13 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+# Deploys only the FastAPI backend (Docker). The frontend is deployed
+# separately on Vercel — see README.md "Canlıya alma".
+services:
+  - type: web
+    name: analyzewise-crm-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/health
+    envVars:
+      - key: ALLOWED_ORIGINS
+        value: "*" # deploy sonrası frontend'in gerçek Vercel domainiyle güncelleyin
