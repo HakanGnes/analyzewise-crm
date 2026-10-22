@@ -7,15 +7,15 @@ const NAV_ITEMS = [
   { id: "windows", label: "Pencere Araması", icon: "🔍" },
 ];
 
-export default function Sidebar({ active, onSelect, hasSession }) {
+export default function Sidebar({ active, onSelect, hasSession, onHome }) {
   return (
     <aside className="sidebar">
-      <div className="sidebar-brand">
+      <button className="sidebar-brand" onClick={onHome} title="Tanıtım sayfasına dön">
         <div className="sidebar-brand-mark">
           Analyze<span>Wise</span>
         </div>
         <div className="sidebar-brand-sub">CRM Analytics</div>
-      </div>
+      </button>
       <nav className="sidebar-nav">
         <button
           className={`sidebar-nav-item${active === "upload" ? " active" : ""}`}

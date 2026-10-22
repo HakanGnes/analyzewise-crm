@@ -13,8 +13,16 @@ function badgeClass(value) {
   return "risk-orta";
 }
 
-function formatCell(value) {
+// Identifier columns are labels, not quantities — "12346" must not render as "12.346"
+const ID_COLUMNS = new Set(["CustomerNo", "TransactionNo", "ProductNo"]);
+
+// 0–1 probabilities read better as percentages, and 1.0 must not collapse to "1"
+const PROBABILITY_COLUMNS = new Set(["churn_probability"]);
+
+function formatCell(value, key) {
   if (value === null || value === undefined) return "—";
+  if (ID_COLUMNS.has(key)) return String(value);
+  if (PROBABILITY_COLUMNS.has(key) && typeof value === "number") return `%${Math.round(value * 100)}`;
   if (typeof value === "number") {
     return Number.isInteger(value) ? value.toLocaleString("tr-TR") : value.toFixed(2);
   }
@@ -62,7 +70,7 @@ export default function DataTable({ columns, rows, pageSize = 15, exportFilename
                     {BADGE_COLUMNS.has(col.key) ? (
                       <span className={`badge ${badgeClass(row[col.key])}`}>{row[col.key]}</span>
                     ) : (
-                      formatCell(row[col.key])
+                      formatCell(row[col.key], col.key)
                     )}
                   </td>
                 ))}

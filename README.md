@@ -24,6 +24,23 @@ analyzewise-crm-phase3/
       screens/            ← Upload, Segments, CLTV, Churn, Recommendations, WindowSearch
 ```
 
+## Tanıtım sayfası ve demo
+
+Site bir tanıtım sayfasıyla açılır: ürünün ne yaptığı, kullanılan modeller,
+gerçek veride ölçülen sonuçlar ve nasıl çalıştığı. "Demo veriyle dene"
+butonu, `backend/app/demo_data.py` içinde üretilen 600 müşterilik, bir yıllık
+sentetik bir mağaza verisiyle tüm ekranları açar — gerçek müşteri verisi
+repoya hiç girmez.
+
+Demo veri rastgele değil, içine gerçek davranış yapısı yerleştirilmiştir
+(sadık / düzenli / ara sıra / giderek kopan / tek seferlik müşteri tipleri,
+birlikte alınan ürün grupları). Bu sayede modeller demoda da anlamlı sonuç
+verir: churn ROC AUC ≈ 0,82, CLTV baseline'a göre ≈ %27 iyileşme, FP-Growth
+planlanan ürün gruplarını bulur.
+
+Tanıtım sayfası açılır açılmaz backend'e bir `health` isteği gönderir; Render
+ücretsiz katmanında uyuyan sunucu, ziyaretçi sayfayı okurken uyanmaya başlar.
+
 ## Neden bu mimari
 
 - **Backend hiçbir iş mantığı içermiyor** — her route `analyzewise_crm`
@@ -69,6 +86,7 @@ yükleyip segmentasyon/CLTV/churn/ürün önerisi ekranlarına geçebilirsiniz.
 | Method | Path | Açıklama |
 |---|---|---|
 | POST | `/api/upload` | Dosya yükle, `session_id` döner |
+| POST | `/api/demo` | Dahili sentetik demo veriyle oturum başlatır (dosya yüklemeden deneme) |
 | GET | `/api/overview` | KPI özeti + aylık gelir/işlem/yeni müşteri trendi (hızlı, model eğitmiyor) |
 | GET | `/api/segments` | K-Means segmentasyon (`k`, `auto` parametreleri) |
 | GET | `/api/cltv` | CLTV tahmini (`approach=single\|hurdle`) |

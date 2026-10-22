@@ -61,6 +61,17 @@ def test_upload_returns_session_info(session_id):
     assert session_id
 
 
+def test_demo_endpoint_starts_a_usable_session():
+    response = client.post("/api/demo")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["is_demo"] is True
+    assert body["n_customers"] > 100
+    overview = client.get("/api/overview", params={"session_id": body["session_id"]})
+    assert overview.status_code == 200
+    assert overview.json()["kpis"]["total_customers"] == body["n_customers"]
+
+
 def test_upload_rejects_missing_columns():
     buf = io.BytesIO()
     pd.DataFrame({"foo": [1, 2]}).to_excel(buf, index=False)

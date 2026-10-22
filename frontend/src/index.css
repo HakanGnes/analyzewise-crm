@@ -609,3 +609,81 @@ table.data-table {
     padding: 12px 20px;
   }
 }
+
+/* ---------- sidebar brand as home link ---------- */
+
+button.sidebar-brand {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+}
+
+button.sidebar-brand:hover .sidebar-brand-mark {
+  color: var(--primary);
+}
+
+/* ---------- topbar demo badge ---------- */
+
+.topbar-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--warning);
+  background: var(--warning-soft);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+/* ---------- upload help ---------- */
+
+.upload-help {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 24px;
+  margin-top: 24px;
+}
+
+.upload-help > div {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+}
+
+.upload-demo {
+  border-color: #c7d2fe !important;
+  background: var(--primary-soft) !important;
+}
+
+.upload-help-title {
+  font-weight: 600;
+  font-size: 14px;
+  margin: 0 0 8px;
+}
+
+.upload-help-text {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin: 0 0 10px;
+  line-height: 1.7;
+}
+
+.upload-help-text code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 6px;
+  margin-right: 6px;
+  color: var(--text);
+}
+
+@media (max-width: 720px) {
+  .upload-help {
+    grid-template-columns: 1fr;
+  }
+}

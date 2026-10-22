@@ -21,6 +21,16 @@ export function uploadFile(file) {
   return request("/api/upload", { method: "POST", body: formData });
 }
 
+export function startDemo() {
+  return request("/api/demo", { method: "POST" });
+}
+
+// Fire-and-forget: wakes a sleeping free-tier backend while the visitor is
+// still reading the landing page, so the first real request is faster.
+export function warmUpBackend() {
+  fetch(`${API_BASE}/api/health`).catch(() => {});
+}
+
 export function deleteSession(sessionId) {
   return request(`/api/sessions/${sessionId}`, { method: "DELETE" });
 }

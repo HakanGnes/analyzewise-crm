@@ -2,7 +2,10 @@ import { useRef, useState } from "react";
 import { uploadFile } from "../api";
 import MetricCard from "../components/MetricCard";
 
-export default function UploadScreen({ dataset, onUploaded }) {
+const REQUIRED_COLUMNS = ["CustomerNo", "TransactionNo", "Quantity", "Price", "Date"];
+const OPTIONAL_COLUMNS = ["ProductNo", "ProductName", "Country"];
+
+export default function UploadScreen({ dataset, onUploaded, onStartDemo, demoLoading, demoError }) {
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -58,6 +61,26 @@ export default function UploadScreen({ dataset, onUploaded }) {
       </div>
 
       {error && <p className="error-state">{error}</p>}
+
+      <div className="upload-help">
+        <div>
+          <p className="upload-help-title">Beklenen kolonlar</p>
+          <p className="upload-help-text">
+            Zorunlu: {REQUIRED_COLUMNS.map((c) => <code key={c}>{c}</code>)}
+          </p>
+          <p className="upload-help-text">
+            İsteğe bağlı: {OPTIONAL_COLUMNS.map((c) => <code key={c}>{c}</code>)} (ürün önerisi için ProductNo gerekir)
+          </p>
+        </div>
+        <div className="upload-demo">
+          <p className="upload-help-title">Elinde dosya yok mu?</p>
+          <p className="upload-help-text">600 müşterilik sentetik bir mağaza verisiyle tüm ekranları dene.</p>
+          <button className="btn-primary" onClick={onStartDemo} disabled={demoLoading}>
+            {demoLoading ? "Demo hazırlanıyor…" : "Demo veriyle dene"}
+          </button>
+          {demoError && <p className="error-state" style={{ padding: "8px 0 0" }}>{demoError}</p>}
+        </div>
+      </div>
 
       {dataset && (
         <div className="dataset-summary">

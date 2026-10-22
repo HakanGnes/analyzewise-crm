@@ -31,6 +31,7 @@ from analyzewise_crm.recommender import (
 )
 from analyzewise_crm.segmentation import cluster_customers
 
+from .demo_data import DEMO_FILENAME, generate_demo_transactions
 from .store import store
 from .utils import df_to_records, safe_jsonable
 
@@ -87,17 +88,32 @@ async def upload(file: UploadFile = File(...)):
     except Exception as exc:  # noqa: BLE001 - surfacing the parser's own message is the point
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    session_id = store.create(raw_df, file.filename)
+    return _session_payload(store.create(raw_df, file.filename), raw_df, file.filename)
+
+
+@app.post("/api/demo")
+def start_demo():
+    """Start a session on the built-in synthetic dataset, so a visitor
+    without their own CRM file can still try every screen."""
+    raw_df = generate_demo_transactions()
+    session_id = store.create(raw_df, DEMO_FILENAME)
+    payload = _session_payload(session_id, raw_df, DEMO_FILENAME)
+    payload["is_demo"] = True
+    return payload
+
+
+def _session_payload(session_id: str, raw_df: pd.DataFrame, filename: str) -> dict:
     cols = DEFAULT_CONFIG.columns
     return safe_jsonable(
         {
             "session_id": session_id,
-            "filename": file.filename,
+            "filename": filename,
             "n_rows": len(raw_df),
             "n_customers": int(raw_df[cols.customer_id].nunique()),
             "columns": list(raw_df.columns),
             "has_product_id": cols.product_id in raw_df.columns,
             "has_country": cols.country in raw_df.columns,
+            "is_demo": False,
         }
     )
 
