@@ -1,25 +1,33 @@
 import { useRef, useState } from "react";
-import { uploadFile } from "../api";
+import { inspectUpload } from "../api";
+import MappingStep from "../components/MappingStep";
 import MetricCard from "../components/MetricCard";
 
 const TEMPLATE_XLSX = "/analyzewise-ornek-veri.xlsx";
 const TEMPLATE_CSV = "/analyzewise-ornek-veri.csv";
 
+const NEED = {
+  required: { text: "Zorunlu", cls: "badge-required" },
+  either: { text: "Biri zorunlu", cls: "badge-required" },
+  optional: { text: "İsteğe bağlı", cls: "badge-neutral" },
+};
+
 const FORMAT_COLUMNS = [
-  { name: "CustomerNo", required: true, what: "Müşteriyi tanımlayan no ya da kod", example: "12546", aliases: "Müşteri No, CustomerID" },
+  { name: "CustomerNo", need: "required", what: "Müşteri no, kodu ya da e-postası", example: "MUS-0012", aliases: "Müşteri No, Cari Kodu, CustomerID" },
+  { name: "Date", need: "required", what: "İşlem tarihi", example: "17.01.2019", aliases: "Tarih, Satış Tarihi, InvoiceDate" },
+  { name: "Price", need: "either", what: "Birim fiyat", example: "20,35", aliases: "Birim Fiyat, Fiyat, UnitPrice" },
+  { name: "TotalPrice", need: "either", what: "Satır tutarı (adet × fiyat). Birim fiyat yoksa buradan hesaplanır.", example: "₺61,05", aliases: "Tutar, Toplam, Amount" },
   {
     name: "TransactionNo",
-    required: true,
-    what: "Fatura ya da sipariş no. Aynı sepetteki satırlar aynı no'yu taşır.",
+    need: "optional",
+    what: "Fatura ya da sipariş no. Yoksa aynı müşterinin aynı günkü satırları tek alışveriş sayılır.",
     example: "504788",
     aliases: "Fatura No, Sipariş No, InvoiceNo, OrderID",
   },
-  { name: "Date", required: true, what: "İşlem tarihi", example: "17.01.2019", aliases: "Tarih, InvoiceDate, OrderDate" },
-  { name: "Quantity", required: true, what: "Satılan adet", example: "3", aliases: "Adet, Miktar, Qty" },
-  { name: "Price", required: true, what: "Birim fiyat. Satır tutarı adet × fiyat olarak hesaplanır.", example: "20,35", aliases: "Birim Fiyat, Fiyat, UnitPrice" },
-  { name: "ProductNo", required: false, what: "Ürün kodu. Ürün önerisi ekranı için gerekir.", example: "1002", aliases: "Ürün Kodu, Stok Kodu, StockCode, SKU" },
-  { name: "ProductName", required: false, what: "Ürün adı. Önerilerde kod yerine görünür.", example: "Demlik", aliases: "Ürün Adı, Description" },
-  { name: "Country", required: false, what: "Ülke", example: "Türkiye", aliases: "Ülke" },
+  { name: "Quantity", need: "optional", what: "Satılan adet. Yoksa 1 sayılır.", example: "3", aliases: "Adet, Miktar, Qty" },
+  { name: "ProductNo", need: "optional", what: "Ürün kodu. Ürün önerileri için; yoksa ürün adı kullanılır.", example: "1002", aliases: "Ürün Kodu, Stok Kodu, SKU" },
+  { name: "ProductName", need: "optional", what: "Ürün adı", example: "Demlik", aliases: "Ürün Adı, Stok Adı, Description" },
+  { name: "Country", need: "optional", what: "Ülke ya da bölge", example: "Türkiye", aliases: "Ülke, Bölge" },
 ];
 
 export default function UploadScreen({ dataset, onUploaded, onStartDemo, demoLoading, demoError }) {
@@ -28,18 +36,39 @@ export default function UploadScreen({ dataset, onUploaded, onStartDemo, demoLoa
   const [error, setError] = useState(null);
   const inputRef = useRef(null);
 
+  const [inspection, setInspection] = useState(null);
+
   async function handleFile(file) {
     if (!file) return;
     setLoading(true);
     setError(null);
     try {
-      const result = await uploadFile(file);
-      onUploaded(result);
+      setInspection(await inspectUpload(file));
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
+      if (inputRef.current) inputRef.current.value = "";
     }
+  }
+
+  if (inspection) {
+    return (
+      <div>
+        <div className="screen-header">
+          <h1 className="screen-title">Veri Yükle</h1>
+        </div>
+        <MappingStep
+          key={inspection.upload_id}
+          inspection={inspection}
+          onDone={(result) => {
+            setInspection(null);
+            onUploaded(result);
+          }}
+          onCancel={() => setInspection(null)}
+        />
+      </div>
+    );
   }
 
   return (
@@ -47,8 +76,8 @@ export default function UploadScreen({ dataset, onUploaded, onStartDemo, demoLoa
       <div className="screen-header">
         <h1 className="screen-title">Veri Yükle</h1>
         <p className="screen-subtitle">
-          Satış işlemlerinizi Excel ya da CSV olarak yükleyin. Müşteri no, fatura no, tarih, adet ve fiyat yeterli;
-          beklenen biçim aşağıda, hazır şablonu indirip doldurabilirsiniz.
+          Satış verinizi Excel ya da CSV olarak yükleyin. Kolon adları ve biçimler farklı olabilir: sistem hangi kolonun ne
+          olduğunu tahmin eder, analizden önce size gösterip onaylatır.
         </p>
       </div>
 
@@ -66,7 +95,7 @@ export default function UploadScreen({ dataset, onUploaded, onStartDemo, demoLoa
           handleFile(e.dataTransfer.files?.[0]);
         }}
       >
-        <p className="dropzone-title">{loading ? "Yükleniyor…" : "Dosyayı buraya bırakın"}</p>
+        <p className="dropzone-title">{loading ? "Dosya okunuyor…" : "Dosyayı buraya bırakın"}</p>
         <p className="dropzone-sub">ya da tıklayıp bilgisayarınızdan seçin — .xlsx, .xls, .csv</p>
         <input
           ref={inputRef}
@@ -84,11 +113,11 @@ export default function UploadScreen({ dataset, onUploaded, onStartDemo, demoLoa
           <div className="format-guide-head">
             <div>
               <p className="upload-help-title" id="format-guide-title">
-                Dosyanız nasıl olmalı?
+                Sistemin aradığı bilgiler
               </p>
               <p className="upload-help-text">
-                Excel ya da CSV; her satır bir faturadaki bir ürün. Kolon sırası önemli değil, fazladan kolonlar yok
-                sayılır.
+                Her satır bir satış (bir faturadaki bir ürün). Kolon adları birebir aynı olmak zorunda değil; sıra önemli
+                değil, fazladan kolonlar yok sayılır. Sıfırdan hazırlıyorsanız şablonu kullanın.
               </p>
             </div>
             <div className="format-guide-downloads">
@@ -119,9 +148,7 @@ export default function UploadScreen({ dataset, onUploaded, onStartDemo, demoLoa
                       <span className="format-aliases">ya da {c.aliases}</span>
                     </td>
                     <td>
-                      <span className={`badge ${c.required ? "badge-required" : "badge-neutral"}`}>
-                        {c.required ? "Zorunlu" : "İsteğe bağlı"}
-                      </span>
+                      <span className={`badge ${NEED[c.need].cls}`}>{NEED[c.need].text}</span>
                     </td>
                     <td>{c.what}</td>
                     <td className="format-example">{c.example}</td>
@@ -133,24 +160,24 @@ export default function UploadScreen({ dataset, onUploaded, onStartDemo, demoLoa
 
           <ul className="format-rules">
             <li>
-              <strong>Tarih:</strong> Excel tarih hücresi en güvenlisi. Metin olarak 2026-10-22, 22.10.2026 ya da
-              22/10/2026 yazabilirsiniz; saat eklenebilir.
+              <strong>Zorunlu olanlar:</strong> müşteri, tarih ve birim fiyat ya da satır tutarı. Fatura no yoksa aynı
+              müşterinin aynı gündeki satırları tek alışveriş sayılır; adet yoksa her satır 1 adet sayılır.
             </li>
             <li>
-              <strong>Süre:</strong> En az 6 ay (180 gün), tercihen 1 yıllık işlem geçmişi. Modeller müşterinin 90
-              gününe bakıp sonraki 90 günü tahmin eder.
+              <strong>Kimlikler:</strong> müşteri ve fatura no harf içerebilir (MUS-0012, ORD-1001, e-posta). Baştaki
+              sıfırlar korunur.
             </li>
             <li>
-              <strong>Sayılar:</strong> 20,35 ve 20.35 ikisi de olur. Adedi ya da fiyatı 0 veya negatif satırlar
-              (iadeler, iptaller) ve müşteri no'su boş satırlar analize alınmaz.
+              <strong>Tarih ve sayılar:</strong> Excel tarih hücresi, 2026-10-22, 22.10.2026, 10/22/2026 gibi biçimler ve
+              ₺1.234,50 ya da $1,234.50 gibi tutarlar okunur. Gün/ay sırası belirsizse size sorulur.
             </li>
             <li>
-              <strong>Kolon adları:</strong> Türkçe adlar ve yaygın e-ticaret dışa aktarımları (ör. UCI Online
-              Retail) otomatik tanınır. Eksik bir şey varsa yükleme anında hangi kolonun eksik olduğu yazılır.
+              <strong>Dosya yapısı:</strong> Başlığın üstündeki rapor başlığı satırları atlanır; birden fazla sayfa varsa
+              veri olan sayfa seçilir, isterseniz değiştirebilirsiniz.
             </li>
             <li>
-              <strong>Gizlilik:</strong> Dosya yalnızca oturumunuz boyunca bellekte tutulur; diske ya da veritabanına
-              yazılmaz.
+              <strong>Süre ve gizlilik:</strong> En az 6 ay, tercihen 1 yıllık veri. Dosya yalnızca oturumunuz boyunca
+              bellekte tutulur; diske ya da veritabanına yazılmaz.
             </li>
           </ul>
         </section>

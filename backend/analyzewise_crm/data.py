@@ -16,32 +16,6 @@ from .config import AnalysisConfig, DEFAULT_CONFIG
 SourceType = Union[str, Path, "object"]
 
 
-# Other names the same field commonly goes by: Turkish exports, the UCI
-# "Online Retail" layout (InvoiceNo / StockCode / UnitPrice / CustomerID /
-# InvoiceDate) and generic e-commerce exports. Matching is case- and
-# accent-insensitive and ignores spaces, dots, dashes and underscores.
-COLUMN_ALIASES = {
-    "customer_id": ["customerno", "customerid", "customer", "clientid", "musterino", "musteriid", "musterikodu", "musteri"],
-    "transaction_id": [
-        "transactionno", "transactionid", "invoiceno", "invoice", "invoiceid", "orderno", "orderid",
-        "islemno", "siparisno", "siparisid", "faturano", "fisno",
-    ],
-    "product_id": ["productno", "productid", "stockcode", "sku", "urunno", "urunkodu", "urunid", "stokkodu"],
-    "product_name": ["productname", "description", "urunadi", "urunismi", "urun"],
-    "quantity": ["quantity", "qty", "adet", "miktar"],
-    "price": ["price", "unitprice", "fiyat", "birimfiyat", "birimfiyati"],
-    "date": ["date", "invoicedate", "orderdate", "transactiondate", "tarih", "islemtarihi", "siparistarihi", "faturatarihi"],
-    "country": ["country", "ulke"],
-}
-
-FIELD_LABELS = {
-    "customer_id": "müşteri no",
-    "transaction_id": "işlem / fatura no",
-    "quantity": "adet",
-    "price": "birim fiyat",
-    "date": "tarih",
-}
-
 # Tried in order; the first one that parses every non-empty value wins.
 DATE_FORMATS = [
     "%m/%d/%Y",
@@ -54,34 +28,6 @@ DATE_FORMATS = [
     "%d/%m/%Y",
     "%d/%m/%Y %H:%M",
 ]
-
-MIN_HISTORY_DAYS = 180
-
-
-def _key(name: object) -> str:
-    text = str(name).strip().lower()
-    for a, b in (("ı", "i"), ("ü", "u"), ("ş", "s"), ("ğ", "g"), ("ç", "c"), ("ö", "o"), ("i̇", "i")):
-        text = text.replace(a, b)
-    return "".join(ch for ch in text if ch.isalnum())
-
-
-def normalize_columns(df: pd.DataFrame, config: AnalysisConfig = DEFAULT_CONFIG) -> pd.DataFrame:
-    """Rename recognised alternative column names to the ones the analysis
-    expects (config.columns). A column that already has the expected name
-    is left alone; an alias is only used when exactly one column matches.
-    """
-    cols = config.columns
-    present = {_key(c): c for c in df.columns}
-    renames = {}
-    for field_name, aliases in COLUMN_ALIASES.items():
-        target = getattr(cols, field_name)
-        if target in df.columns:
-            continue
-        matches = [present[a] for a in aliases if a in present and present[a] not in renames]
-        if len(matches) == 1:
-            renames[matches[0]] = target
-    return df.rename(columns=renames)
-
 
 def parse_dates(series: pd.Series, config: AnalysisConfig = DEFAULT_CONFIG) -> pd.Series:
     """Parse a date column. Excel date cells arrive already parsed; text
@@ -112,66 +58,23 @@ def parse_dates(series: pd.Series, config: AnalysisConfig = DEFAULT_CONFIG) -> p
     )
 
 
-def _to_number(series: pd.Series) -> pd.Series:
-    if pd.api.types.is_numeric_dtype(series):
-        return series
-    # "1.234,50" (Turkish) and "1234.50" both become 1234.5
-    text = series.astype(str).str.strip()
-    turkish = text.str.contains(",", regex=False)
-    text = text.where(~turkish, text.str.replace(".", "", regex=False).str.replace(",", ".", regex=False))
-    return pd.to_numeric(text, errors="coerce")
-
-
 def load_transactions(source: SourceType, config: AnalysisConfig = DEFAULT_CONFIG) -> pd.DataFrame:
-    """Load raw transaction data from a path or file-like object (.xlsx,
-    .xls or .csv), map alternative column names, and check everything the
-    analysis needs up front — so a bad file fails at upload with a clear
-    message, not minutes later deep inside model training.
+    """Load a sales file (.xlsx, .xls or .csv; path or file-like) and turn
+    it into the standard transaction table, guessing which column is
+    which (see schema.py). Raises ValueError with a Turkish message when
+    the file can't be understood or analysed.
+
+    The web app uses the two-step inspect/confirm flow instead, so the
+    user can correct a guess before the table is built.
     """
-    name = str(getattr(source, "name", source)).lower()
+    from .schema import auto_build
 
-    if name.endswith(".csv"):
-        # sep=None sniffs the delimiter: Turkish Excel exports CSV with ';'
-        df = pd.read_csv(source, sep=None, engine="python", encoding="utf-8-sig")
-    elif name.endswith((".xlsx", ".xls")):
-        df = pd.read_excel(source)
+    if isinstance(source, (str, Path)):
+        content, name = Path(source).read_bytes(), str(source)
     else:
-        raise ValueError("Desteklenmeyen dosya türü. Lütfen .xlsx, .xls ya da .csv yükleyin.")
-
-    df = normalize_columns(df, config)
-    cols = config.columns
-    required = {f: getattr(cols, f) for f in FIELD_LABELS}
-    missing = [f"{col} ({FIELD_LABELS[f]})" for f, col in required.items() if col not in df.columns]
-    if missing:
-        raise ValueError(
-            "Dosyada gerekli kolonlar bulunamadı: " + ", ".join(missing)
-            + ". Kolon adlarını şablondaki gibi yazın ya da sayfadaki eş anlamlı adlardan birini kullanın."
-        )
-
-    df[cols.quantity] = _to_number(df[cols.quantity])
-    df[cols.price] = _to_number(df[cols.price])
-
-    raw_dates = df[cols.date]
-    filled = raw_dates.notna() & (raw_dates.astype(str).str.strip() != "")
-    parsed = pd.Series(pd.NaT, index=df.index, dtype="datetime64[ns]")
-    parsed[filled] = parse_dates(raw_dates[filled], config)
-    df[cols.date] = parsed
-
-    usable = df.dropna(subset=[cols.customer_id, cols.quantity, cols.price, cols.date])
-    usable = usable[(usable[cols.quantity] > 0) & (usable[cols.price] > 0)]
-    if usable.empty:
-        raise ValueError(
-            "Kullanılabilir satır yok: müşteri no, adet, fiyat ve tarihi dolu, adet ve fiyatı sıfırdan büyük "
-            "en az bir satır olmalı. Adet ve fiyat sayı olmalı."
-        )
-
-    dates = usable[cols.date]
-    span = (dates.max() - dates.min()).days
-    if span < MIN_HISTORY_DAYS:
-        raise ValueError(
-            f"Veri yalnızca {span} günü kapsıyor. CLTV ve churn modelleri 90 günlük geçmişe bakıp sonraki 90 günü "
-            f"tahmin ettiği için en az {MIN_HISTORY_DAYS} günlük (tercihen 1 yıllık) işlem verisi gerekir."
-        )
+        content = source.read()
+        name = str(getattr(source, "name", "upload.xlsx"))
+    df, _report = auto_build(content, name, config)
     return df
 
 

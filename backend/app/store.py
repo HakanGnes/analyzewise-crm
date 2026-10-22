@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import threading
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
@@ -57,4 +58,33 @@ class SessionStore:
             return self._sessions.pop(session_id, None) is not None
 
 
+class PendingUploads:
+    """Files that were uploaded but whose column mapping the user hasn't
+    confirmed yet. Only the raw bytes are kept (re-reading is cheap and
+    lets the user switch sheets); the oldest are dropped past a small cap
+    so abandoned uploads can't pile up in memory."""
+
+    MAX_ITEMS = 20
+
+    def __init__(self) -> None:
+        self._items: "OrderedDict[str, tuple]" = OrderedDict()
+        self._lock = threading.Lock()
+
+    def add(self, content: bytes, filename: str) -> str:
+        upload_id = uuid.uuid4().hex
+        with self._lock:
+            self._items[upload_id] = (content, filename)
+            while len(self._items) > self.MAX_ITEMS:
+                self._items.popitem(last=False)
+        return upload_id
+
+    def get(self, upload_id: str) -> Optional[tuple]:
+        return self._items.get(upload_id)
+
+    def pop(self, upload_id: str) -> None:
+        with self._lock:
+            self._items.pop(upload_id, None)
+
+
 store = SessionStore()
+pending = PendingUploads()

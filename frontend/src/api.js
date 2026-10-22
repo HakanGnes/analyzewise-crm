@@ -21,6 +21,30 @@ export function uploadFile(file) {
   return request("/api/upload", { method: "POST", body: formData });
 }
 
+// Two-step upload: the server guesses which column is which, the user
+// confirms or corrects the guesses, then the analysis session is created.
+export function inspectUpload(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  return request("/api/upload/inspect", { method: "POST", body: formData });
+}
+
+export function reinspectUpload(uploadId, options) {
+  return request(`/api/upload/${uploadId}/inspect`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(options),
+  });
+}
+
+export function confirmUpload(uploadId, body) {
+  return request(`/api/upload/${uploadId}/confirm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 export function startDemo() {
   return request("/api/demo", { method: "POST" });
 }

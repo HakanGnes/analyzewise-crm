@@ -25,6 +25,7 @@ export default function App() {
   const [view, setView] = useState("landing");
   const [active, setActive] = useState("upload");
   const [dataset, setDataset] = useState(null);
+  const [receiptClosed, setReceiptClosed] = useState(false);
   const [demoLoading, setDemoLoading] = useState(false);
   const [demoError, setDemoError] = useState(null);
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
@@ -80,6 +81,7 @@ export default function App() {
 
   function handleUploaded(result) {
     resetSessionState();
+    setReceiptClosed(false);
     setDataset(result);
     setActive("overview");
     setView("app");
@@ -153,6 +155,9 @@ export default function App() {
               demoError={demoError}
             />
           )}
+          {active === "overview" && dataset?.summary && !receiptClosed && (
+            <DataReceipt summary={dataset.summary} onClose={() => setReceiptClosed(true)} />
+          )}
           {active === "overview" && sessionId && <OverviewScreen sessionId={sessionId} />}
           {active === "segments" && sessionId && (
             <SegmentsScreen
@@ -176,6 +181,40 @@ export default function App() {
           )}
         </main>
       </div>
+    </div>
+  );
+}
+
+// What the upload actually produced: how many rows were used, which were
+// skipped and why, and the assumptions made (derived invoice numbers,
+// unit price from line totals…). Shown once on the overview after upload.
+function DataReceipt({ summary, onClose }) {
+  const fmtInt = (v) => Number(v).toLocaleString("tr-TR");
+  const skipped = Object.entries(summary.skipped || {});
+  return (
+    <div className="data-receipt" role="status">
+      <div>
+        <strong>
+          Verin hazır: {fmtInt(summary.rows_used)} / {fmtInt(summary.rows_total)} satır kullanıldı ·{" "}
+          {fmtInt(summary.n_customers)} müşteri · {fmtInt(summary.n_transactions)} alışveriş · {summary.date_min} –{" "}
+          {summary.date_max}
+        </strong>
+        {(skipped.length > 0 || summary.notes?.length > 0) && (
+          <ul>
+            {skipped.map(([reason, n]) => (
+              <li key={reason}>
+                {fmtInt(n)} satır atlandı: {reason}.
+              </li>
+            ))}
+            {summary.notes.map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <button className="data-receipt-close" onClick={onClose} aria-label="Kapat">
+        ×
+      </button>
     </div>
   );
 }

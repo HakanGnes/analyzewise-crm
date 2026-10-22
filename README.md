@@ -41,28 +41,42 @@ planlanan ürün gruplarını bulur.
 Tanıtım sayfası açılır açılmaz backend'e bir `health` isteği gönderir; Render
 ücretsiz katmanında uyuyan sunucu, ziyaretçi sayfayı okurken uyanmaya başlar.
 
-## Veri formatı
+## Veri formatı ve otomatik kolon tanıma
 
-Yükleme ekranında kolon rehberi ve indirilebilir örnek şablon var
-(`frontend/public/analyzewise-ornek-veri.xlsx` / `.csv`, sentetik veri).
+Kullanıcının dosyası şablona benzemek zorunda değil. Yükleme iki adımlı:
 
-| Kolon | Gerekli | Kabul edilen diğer adlar |
+1. **`POST /api/upload/inspect`** dosyayı okur ve her kolonun rolünü tahmin
+   eder (`analyzewise_crm/schema.py`):
+   - doğru sayfayı (en çok satırı olan) ve başlık satırını bulur (üstteki
+     rapor başlığı satırları atlanır); CSV'de ayırıcıyı ve kodlamayı
+     (UTF-8, Windows-1254) algılar
+   - kolon **adından** (Türkçe/İngilizce eş anlamlılar, aksan ve
+     büyük-küçük harf duyarsız, yakın yazımlar) ve **içeriğinden** (tarih
+     mi, tam sayı mı, ondalıklı mı, kaç farklı değer var) puan verir;
+     adı anlamsız kolonlarda bile tarih, adet ve tutar içerikten bulunur
+     (birim fiyat ile satır tutarı, adede bölünce tekrar eden değer çıkıp
+     çıkmadığıyla ayrılır)
+   - her tahmin için güven düzeyi döner: `yüksek` / `kontrol et` / `bulunamadı`
+2. Arayüz "Verini böyle anladık" ekranında tahminleri örnek değerlerle
+   gösterir; kullanıcı yanlışı listeden düzeltir. **`POST
+   /api/upload/{id}/confirm`** standart tabloyu kurar ve neyin
+   kullanıldığını/atlandığını özetler (Genel Bakış'ın üstünde görünür).
+
+| Rol | Gerekli | Yoksa |
 |---|---|---|
-| `CustomerNo` | zorunlu | Müşteri No, CustomerID |
-| `TransactionNo` | zorunlu | Fatura No, Sipariş No, InvoiceNo, OrderID |
-| `Date` | zorunlu | Tarih, InvoiceDate, OrderDate |
-| `Quantity` | zorunlu | Adet, Miktar, Qty |
-| `Price` | zorunlu | Birim Fiyat, Fiyat, UnitPrice |
-| `ProductNo` | ürün önerisi için | Ürün Kodu, Stok Kodu, StockCode, SKU |
-| `ProductName` | isteğe bağlı | Ürün Adı, Description |
-| `Country` | isteğe bağlı | Ülke |
+| Müşteri | zorunlu | — (harf, e-posta, baştaki sıfırlar korunur) |
+| Tarih | zorunlu | — (Excel hücresi, seri numarası, ISO, gün.ay.yıl, ay/gün/yıl; belirsizse sorulur) |
+| Birim fiyat **ya da** satır tutarı | biri zorunlu | fiyat = tutar ÷ adet |
+| Fatura / sipariş no | isteğe bağlı | aynı müşterinin aynı günkü satırları tek alışveriş |
+| Adet | isteğe bağlı | 1 |
+| Ürün kodu | isteğe bağlı | ürün adı kod olarak kullanılır |
+| Ürün adı, ülke | isteğe bağlı | — |
 
-`load_transactions` dosyayı yükleme anında doğrular ve sorunları Türkçe
-mesajla döner: eksik kolon, okunamayan tarih, 180 günden kısa veri. Tarih
-için Excel tarih hücresi ya da 2026-10-22 / 22.10.2026 / 22/10/2026 /
-10/22/2026 kabul edilir; CSV'de `;` ayırıcı ve `20,35` gibi virgüllü sayılar
-da okunur. Ülke filtresi (`arl_country_filter`) veride o ülke yoksa
-uygulanmaz.
+Sayılar `₺1.234,50`, `$1,234.50`, `12,5` gibi yazılabilir (ondalık ayırıcı
+kolon bazında belirlenir). Adet/fiyatı 0 veya negatif satırlar (iade,
+iptal) ve müşterisi boş satırlar sayılarak atlanır. En az 180 günlük veri
+gerekir. Eski tek adımlı `POST /api/upload` de aynı motoru kullanır
+(tahminleri sormadan uygular). Örnek şablon: `frontend/public/analyzewise-ornek-veri.xlsx`.
 
 ## Görselleştirme ve otomatik CRM raporu
 
@@ -123,7 +137,7 @@ pip install -r requirements-dev.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-Test: `pytest -v` (31 test, ~30 saniye — model eğitimi içerdiği için).
+Test: `pytest -v` (41 test, ~100 saniye — model eğitimi içerdiği için).
 
 ### Frontend
 
@@ -141,7 +155,10 @@ yükleyip segmentasyon/CLTV/churn/ürün önerisi ekranlarına geçebilirsiniz.
 
 | Method | Path | Açıklama |
 |---|---|---|
-| POST | `/api/upload` | Dosya yükle, `session_id` döner |
+| POST | `/api/upload/inspect` | Dosyayı oku, kolon rollerini tahmin et (analiz yok) |
+| POST | `/api/upload/{id}/inspect` | Aynı dosyayı başka sayfa / tarih sırasıyla yeniden oku |
+| POST | `/api/upload/{id}/confirm` | Onaylanan eşlemeyle oturum aç, kullanılan/atlanan satır özetini döner |
+| POST | `/api/upload` | Tek adımda yükle (tahminleri sormadan uygular), `session_id` döner |
 | POST | `/api/demo` | Dahili sentetik demo veriyle oturum başlatır (dosya yüklemeden deneme) |
 | GET | `/api/value-risk` | Churn olasılığı × geçmiş harcama, dört bölge ve öncelikli geri kazanım listesi |
 | GET | `/api/recommendations/trend` | Bir ürünle birlikte alınma oranlarının dönem başı / sonu karşılaştırması (slopegraph) |

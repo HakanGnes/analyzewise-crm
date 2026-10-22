@@ -12,11 +12,13 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import HTMLResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from analyzewise_crm import DEFAULT_CONFIG, load_transactions, search_windows
+from analyzewise_crm import schema
 from analyzewise_crm.recommender import (
     collaborative_filtering_scores,
     copurchase_trend,
@@ -25,7 +27,7 @@ from analyzewise_crm.recommender import (
 
 from . import analysis, report
 from .demo_data import DEMO_FILENAME, generate_demo_transactions
-from .store import store
+from .store import pending, store
 from .utils import df_to_records, safe_jsonable
 
 app = FastAPI(title="AnalyzeWise CRM API", version="0.3.0")
@@ -72,16 +74,118 @@ def health():
 
 @app.post("/api/upload")
 async def upload(file: UploadFile = File(...)):
+    """One-shot upload: guess the columns and analyse without asking.
+    The web app uses /api/upload/inspect + /confirm instead."""
     content = await file.read()
-    buf = io.BytesIO(content)
-    buf.name = file.filename  # load_transactions sniffs the extension from this
-
     try:
-        raw_df = load_transactions(buf, DEFAULT_CONFIG)
-    except Exception as exc:  # noqa: BLE001 - surfacing the parser's own message is the point
+        raw_df, build = schema.auto_build(content, file.filename or "upload.xlsx", DEFAULT_CONFIG)
+    except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return _session_payload(store.create(raw_df, file.filename), raw_df, file.filename)
+    payload = _session_payload(store.create(raw_df, file.filename), raw_df, file.filename)
+    payload["summary"] = build.as_dict()
+    return payload
+
+
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+
+
+def _inspection(upload_id: str, sheet: Optional[str], date_order: str = "auto") -> dict:
+    item = pending.get(upload_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Yüklenen dosya bulunamadı ya da süresi doldu. Dosyayı tekrar yükleyin.")
+    content, filename = item
+    try:
+        table = schema.read_table(content, filename, sheet)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if table.df.empty or len(table.df.columns) < 2:
+        raise HTTPException(status_code=400, detail="Dosyada okunabilir bir tablo bulunamadı.")
+
+    profiles = schema.profile_columns(table.df, date_order)
+    suggestions = schema.suggest_mapping(table.df, profiles)
+    mapping = {role: s.column for role, s in suggestions.items()}
+    by_name = {p.name: p for p in profiles}
+    date_profile = by_name.get(mapping["date"]) if mapping["date"] else None
+    preview = table.df.head(5).map(lambda v: "" if pd.isna(v) else schema._sample_text(v))
+    return safe_jsonable(
+        {
+            "upload_id": upload_id,
+            "filename": filename,
+            "sheets": table.sheets,
+            "sheet": table.sheet,
+            "header_row": table.header_row + 1,  # 1-based for people
+            "n_rows": len(table.df),
+            "columns": [
+                {"name": p.name, "kind": p.kind, "samples": p.samples, "unique": p.unique,
+                 "empty_share": round(p.empty_share, 3), "date_ambiguous": p.date_ambiguous}
+                for p in profiles
+            ],
+            "roles": [
+                {"role": role, "label": spec["label"], "required": spec["required"], "help": spec["help"],
+                 "column": suggestions[role].column, "confidence": suggestions[role].confidence,
+                 "reason": suggestions[role].reason}
+                for role, spec in schema.ROLES.items()
+            ],
+            "date": {
+                "label": date_profile.date_label if date_profile else "",
+                "ambiguous": bool(date_profile and date_profile.date_ambiguous),
+                "order": date_order,
+            },
+            "hints": schema.unreadable_hints(profiles, suggestions),
+            "problems": schema.mapping_problems(mapping),
+            "preview": {"columns": list(preview.columns), "rows": preview.values.tolist()},
+        }
+    )
+
+
+@app.post("/api/upload/inspect")
+async def upload_inspect(file: UploadFile = File(...), sheet: Optional[str] = Form(None)):
+    """Step 1 of the upload flow: read the file and guess which column
+    is which. Nothing is analysed yet; the user confirms or corrects the
+    guesses, then calls /confirm."""
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Dosya 50 MB'tan büyük.")
+    upload_id = pending.add(content, file.filename or "upload.xlsx")
+    return _inspection(upload_id, sheet)
+
+
+class InspectOptions(BaseModel):
+    sheet: Optional[str] = None
+    date_order: str = "auto"
+
+
+@app.post("/api/upload/{upload_id}/inspect")
+def upload_reinspect(upload_id: str, options: InspectOptions):
+    """Re-read the same file with another sheet or date order."""
+    return _inspection(upload_id, options.sheet, options.date_order)
+
+
+class ConfirmBody(BaseModel):
+    mapping: dict
+    sheet: Optional[str] = None
+    date_order: str = "auto"
+
+
+@app.post("/api/upload/{upload_id}/confirm")
+def upload_confirm(upload_id: str, body: ConfirmBody):
+    """Step 2: build the standard table with the user's mapping and open
+    an analysis session."""
+    item = pending.get(upload_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Yüklenen dosya bulunamadı ya da süresi doldu. Dosyayı tekrar yükleyin.")
+    content, filename = item
+    mapping = {role: (body.mapping.get(role) or None) for role in schema.ROLES}
+    try:
+        table = schema.read_table(content, filename, body.sheet)
+        df, build = schema.apply_mapping(table.df, mapping, DEFAULT_CONFIG, body.date_order)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    pending.pop(upload_id)
+    payload = _session_payload(store.create(df, filename), df, filename)
+    payload["summary"] = build.as_dict()
+    return payload
 
 
 @app.post("/api/demo")

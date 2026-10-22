@@ -68,7 +68,7 @@ def test_online_retail_layout_with_iso_dates(demo):
 def test_missing_column_is_named_in_turkish(demo):
     response = _post(demo.drop(columns=["Price"]), "eksik.xlsx")
     assert response.status_code == 400
-    assert "Price (birim fiyat)" in response.json()["detail"]
+    assert "Birim fiyat ya da satır tutarı" in response.json()["detail"]
 
 
 def test_too_short_history_is_rejected(demo):
@@ -82,7 +82,7 @@ def test_too_short_history_is_rejected(demo):
 def test_unreadable_dates_are_rejected(demo):
     response = _post(demo.assign(Date="geçen hafta"), "tarih.xlsx")
     assert response.status_code == 400
-    assert "Tarih kolonu okunamadı" in response.json()["detail"]
+    assert "'Date' kolonundaki değerler tarih olarak okunamadı" in response.json()["detail"]
 
 
 def test_country_filter_falls_back_when_country_absent(demo):
