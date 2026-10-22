@@ -79,3 +79,38 @@ export function getRecommendations(sessionId, productId, method = "fpgrowth", to
 export function searchWindows(sessionId) {
   return request(`/api/windows/search?session_id=${sessionId}`);
 }
+
+export function getRecommendationTrend(sessionId, productId, topN = 8) {
+  const params = new URLSearchParams({ session_id: sessionId, product_id: String(productId), top_n: String(topN) });
+  return request(`/api/recommendations/trend?${params}`);
+}
+
+export function getValueRisk(sessionId, approach = "single") {
+  return request(`/api/value-risk?session_id=${sessionId}&approach=${approach}`);
+}
+
+function reportParams(sessionId, { k, auto, approach } = {}) {
+  const params = new URLSearchParams({ session_id: sessionId, approach: approach || "single" });
+  if (auto) params.set("auto", "true");
+  else if (k) params.set("k", String(k));
+  return params;
+}
+
+export async function getReportHtml(sessionId, settings) {
+  const response = await fetch(`${API_BASE}/api/report?${reportParams(sessionId, settings)}`);
+  if (!response.ok) {
+    let detail = `Rapor oluşturulamadı (${response.status}).`;
+    try {
+      const body = await response.json();
+      if (body.detail) detail = body.detail;
+    } catch {
+      // not JSON — keep the generic message
+    }
+    throw new Error(detail);
+  }
+  return response.text();
+}
+
+export function reportXlsxUrl(sessionId, settings) {
+  return `${API_BASE}/api/report.xlsx?${reportParams(sessionId, settings)}`;
+}

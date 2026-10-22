@@ -41,6 +41,39 @@ planlanan ürün gruplarını bulur.
 Tanıtım sayfası açılır açılmaz backend'e bir `health` isteği gönderir; Render
 ücretsiz katmanında uyuyan sunucu, ziyaretçi sayfayı okurken uyanmaya başlar.
 
+## Görselleştirme ve otomatik CRM raporu
+
+Grafik seçimleri Claus Wilke'nin *Fundamentals of Data Visualization*
+kitabına dayanır; her grafik başlığı neyin çizildiğini değil, grafiğin
+söylediği bulguyu yazar.
+
+| Ekran | Soru | Grafik |
+|---|---|---|
+| Segmentasyon | Hangi grup ne kadar büyük, ne kadar değerli? | Sıralı yatay çubuk, segment profili ısı haritası, seçili segmenti vurgulayan dağılım grafiği |
+| CLTV | Değer kimde toplanıyor? | Pareto (birikimli pay) eğrisi, tahmini değer histogramı |
+| Churn | Kim gitmek üzere, kimi kurtarmalı? | Sıralı risk grupları için %100 yığılmış çubuk, olasılık histogramı, risk × geçmiş harcama matrisi + geri kazanım listesi |
+| Ürün önerisi | Ne önerilmeli, hangi eşleşme güçleniyor? | Lift / benzerlik çubuğu, dönem başı ile sonunu karşılaştıran slopegraph |
+| Pencere araması | Hangi gözlem/tahmin penceresi daha iyi? | İki ısı haritası |
+
+Pasta grafik kullanılmıyor: segment sayısı 6–10 arasında ve sıralı risk
+grupları için yığılmış çubuk sırayı daha iyi korur. Slopegraph, Wilke'nin
+tanımına uygun olarak az sayıda öğenin (en çok birlikte alınan 8 ürün) iki
+dönemdeki değerini karşılaştırmak için kullanılır. Renk rolleri
+`frontend/src/charts/theme.js` içinde tek yerde; kategorik çiftler renk
+körlüğü kontrolünden geçirildi.
+
+**CRM raporu:** CLTV ve churn ekranlarına bakıldıktan sonra rapor arka planda
+kendiliğinden hazırlanır ve üst çubukta "CRM raporunuz hazır" görünür. Rapor,
+ekranlarda seçilen ayarları (segment sayısı, CLTV yaklaşımı) kullanır ve
+modelleri yeniden eğitmez. İçerik: yönetici özeti, genel görünüm, segmentler
+ve segment bazında önerilen aksiyonlar, müşteri değeri, churn riski, öncelikli
+geri kazanım listesi, ürün önerileri, model kalitesi ve yöntem.
+
+Çıktılar: tek dosyalık HTML (grafikler gömülü, internetsiz açılır), tarayıcıdan
+**PDF olarak kaydet** (A4 yazdırma stili) ve **Excel** (özet, segmentler +
+aksiyonlar, tüm müşterilerin skorları, geri kazanım listesi, ürün
+birliktelikleri). Uç noktalar: `GET /api/report`, `GET /api/report.xlsx`.
+
 ## Neden bu mimari
 
 - **Backend hiçbir iş mantığı içermiyor** — her route `analyzewise_crm`
@@ -87,6 +120,10 @@ yükleyip segmentasyon/CLTV/churn/ürün önerisi ekranlarına geçebilirsiniz.
 |---|---|---|
 | POST | `/api/upload` | Dosya yükle, `session_id` döner |
 | POST | `/api/demo` | Dahili sentetik demo veriyle oturum başlatır (dosya yüklemeden deneme) |
+| GET | `/api/value-risk` | Churn olasılığı × geçmiş harcama, dört bölge ve öncelikli geri kazanım listesi |
+| GET | `/api/recommendations/trend` | Bir ürünle birlikte alınma oranlarının dönem başı / sonu karşılaştırması (slopegraph) |
+| GET | `/api/report` | Otomatik CRM raporu (HTML) |
+| GET | `/api/report.xlsx` | Rapor listeleri (Excel) |
 | GET | `/api/overview` | KPI özeti + aylık gelir/işlem/yeni müşteri trendi (hızlı, model eğitmiyor) |
 | GET | `/api/segments` | K-Means segmentasyon (`k`, `auto` parametreleri) |
 | GET | `/api/cltv` | CLTV tahmini (`approach=single\|hurdle`) |

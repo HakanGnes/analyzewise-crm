@@ -154,3 +154,28 @@ def test_delete_session(session_id):
     response = client.delete(f"/api/sessions/{sid}")
     assert response.status_code == 200
     assert client.get("/api/segments", params={"session_id": sid}).status_code == 404
+
+
+def test_recommendations_include_names_and_scores(session_id):
+    pid = client.get("/api/products", params={"session_id": session_id}).json()["products"][0]
+    body = client.get(
+        "/api/recommendations", params={"session_id": session_id, "product_id": pid, "method": "cf", "top_n": 3}
+    ).json()
+    assert "items" in body and "score_label" in body
+    for item in body["items"]:
+        assert {"product_id", "name", "score"} <= set(item)
+
+
+def test_recommendation_trend_returns_paired_rates():
+    sid = client.post("/api/demo").json()["session_id"]
+    body = client.get("/api/recommendations/trend", params={"session_id": sid, "product_id": 1001}).json()
+    assert len(body["periods"]) == 2
+    assert body["items"], "demo data should have co-purchase pairs for product 1001"
+    for item in body["items"]:
+        assert 0 <= item["first"] <= 1 and 0 <= item["second"] <= 1
+
+
+def test_value_risk_quadrants_cover_every_customer(session_id):
+    body = client.get("/api/value-risk", params={"session_id": session_id}).json()
+    assert sum(body["quadrant_counts"].values()) == len(body["rows"])
+    assert body["priority_count"] == body["quadrant_counts"].get("değerli, riskte", 0)

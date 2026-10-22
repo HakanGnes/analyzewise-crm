@@ -11,15 +11,25 @@ import {
   YAxis,
 } from "recharts";
 import { getOverview } from "../api";
+import ChartCard from "../charts/ChartCard";
+import { C, axisTick, fmt, tooltipStyle } from "../charts/theme";
 import MetricCard from "../components/MetricCard";
 
-const tooltipStyle = {
-  background: "var(--panel)",
-  border: "1px solid var(--line)",
-  borderRadius: 8,
-  color: "var(--paper)",
-  fontSize: 13,
-};
+function peakTitle(trend, key, noun) {
+  if (!trend.length) return "";
+  const peak = trend.reduce((a, b) => (b[key] > a[key] ? b : a));
+  return `En çok ${noun} ${peak.month} ayında: ${fmt.int(peak[key])}`;
+}
+
+function revenueTitle(trend) {
+  if (trend.length < 2) return "Aylık gelir";
+  const first = trend[0].revenue || 1;
+  const last = trend[trend.length - 1].revenue;
+  const change = last / first - 1;
+  return change >= 0
+    ? `Aylık gelir dönem boyunca ${fmt.pct(change)} arttı`
+    : `Aylık gelir dönem boyunca ${fmt.pct(-change)} azaldı`;
+}
 
 export default function OverviewScreen({ sessionId }) {
   const [data, setData] = useState(null);
@@ -54,7 +64,7 @@ export default function OverviewScreen({ sessionId }) {
         </p>
       </div>
 
-      <div className="card-grid">
+      <div className="stat-strip">
         <MetricCard label="Toplam Müşteri" value={kpis.total_customers.toLocaleString("tr-TR")} tone="teal" />
         <MetricCard
           label="Toplam Gelir"
@@ -64,46 +74,46 @@ export default function OverviewScreen({ sessionId }) {
         <MetricCard label="Ort. Sipariş Değeri" value={kpis.avg_order_value.toFixed(2)} />
       </div>
 
-      <div className="chart-grid">
-        <div className="receipt-card">
-          <p className="receipt-label">Aylık Gelir Trendi</p>
+      <div className="chart-row">
+        <ChartCard title={revenueTitle(trend)} subtitle="Aylık toplam gelir.">
           <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={trend}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" />
-              <XAxis dataKey="month" tick={{ fill: "var(--paper-dim)", fontSize: 11 }} />
-              <YAxis tick={{ fill: "var(--paper-dim)", fontSize: 11 }} />
-              <Tooltip contentStyle={tooltipStyle} />
-              <Line type="monotone" dataKey="revenue" stroke="var(--teal)" strokeWidth={2.5} dot={false} />
+            <LineChart data={trend} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
+              <CartesianGrid stroke={C.grid} vertical={false} />
+              <XAxis dataKey="month" tick={axisTick} stroke={C.axis} />
+              <YAxis tick={axisTick} stroke={C.axis} tickFormatter={(v) => fmt.money(v)} width={64} />
+              <Tooltip contentStyle={tooltipStyle} formatter={(v) => [fmt.money(v), "Gelir"]} />
+              <Line type="monotone" dataKey="revenue" stroke={C.series} strokeWidth={2} dot={false} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
-        </div>
+        </ChartCard>
 
-        <div className="receipt-card">
-          <p className="receipt-label">Aylık İşlem Sayısı</p>
+        <ChartCard title={peakTitle(trend, "transactions", "işlem")} subtitle="Aylık benzersiz işlem (sepet) sayısı.">
           <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={trend}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" />
-              <XAxis dataKey="month" tick={{ fill: "var(--paper-dim)", fontSize: 11 }} />
-              <YAxis tick={{ fill: "var(--paper-dim)", fontSize: 11 }} />
-              <Tooltip contentStyle={tooltipStyle} />
-              <Bar dataKey="transactions" fill="var(--teal)" radius={[4, 4, 0, 0]} />
+            <BarChart data={trend} margin={{ top: 8, right: 12, bottom: 4, left: 4 }} barCategoryGap={2}>
+              <CartesianGrid stroke={C.grid} vertical={false} />
+              <XAxis dataKey="month" tick={axisTick} stroke={C.axis} />
+              <YAxis tick={axisTick} stroke={C.axis} width={44} />
+              <Tooltip contentStyle={tooltipStyle} cursor={{ fill: C.grid }} formatter={(v) => [fmt.int(v), "İşlem"]} />
+              <Bar dataKey="transactions" fill={C.series} radius={[4, 4, 0, 0]} isAnimationActive={false} />
             </BarChart>
           </ResponsiveContainer>
-        </div>
+        </ChartCard>
       </div>
 
-      <div className="receipt-card">
-        <p className="receipt-label">Yeni Müşteri Kazanımı (Aylık)</p>
+      <ChartCard
+        title={peakTitle(trend, "new_customers", "yeni müşteri")}
+        subtitle="Her ay ilk kez alışveriş yapan müşteri sayısı."
+      >
         <ResponsiveContainer width="100%" height={220}>
-          <BarChart data={trend}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" />
-            <XAxis dataKey="month" tick={{ fill: "var(--paper-dim)", fontSize: 11 }} />
-            <YAxis tick={{ fill: "var(--paper-dim)", fontSize: 11 }} />
-            <Tooltip contentStyle={tooltipStyle} />
-            <Bar dataKey="new_customers" fill="var(--amber)" radius={[4, 4, 0, 0]} />
+          <BarChart data={trend} margin={{ top: 8, right: 12, bottom: 4, left: 4 }} barCategoryGap={2}>
+            <CartesianGrid stroke={C.grid} vertical={false} />
+            <XAxis dataKey="month" tick={axisTick} stroke={C.axis} />
+            <YAxis tick={axisTick} stroke={C.axis} width={44} allowDecimals={false} />
+            <Tooltip contentStyle={tooltipStyle} cursor={{ fill: C.grid }} formatter={(v) => [fmt.int(v), "Yeni müşteri"]} />
+            <Bar dataKey="new_customers" fill={C.series} radius={[4, 4, 0, 0]} isAnimationActive={false} />
           </BarChart>
         </ResponsiveContainer>
-      </div>
+      </ChartCard>
     </div>
   );
 }

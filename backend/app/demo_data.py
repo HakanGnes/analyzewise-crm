@@ -69,11 +69,19 @@ _BUNDLES = [
     ([1023, 1024], 0.65),         # hediye kutusu + paket kağıdı
 ]
 
+# Pairings whose strength changes over the year: (anchor, partner, prob at
+# start, prob at end). Gives the co-purchase slopegraph a real story — the
+# tea set + bamboo tray pairing grows, the gift box + wrapping paper fades.
+_TRENDING_PAIRS = [
+    (1001, 1004, 0.05, 0.50),  # çay bardağı seti → bambu tepsi (yükselen)
+    (1023, 1027, 0.45, 0.05),  # hediye kutusu → duvar saati (sönen)
+]
+
 _COUNTRIES = ["United Kingdom", "France", "Germany", "Netherlands"]
 _COUNTRY_WEIGHTS = [0.55, 0.2, 0.15, 0.1]
 
 
-def _basket(rng: np.random.Generator) -> list[int]:
+def _basket(rng: np.random.Generator, year_frac: float = 0.0) -> list[int]:
     product_ids = list(_PRICES.keys())
     items = {int(rng.choice(product_ids))}
     for anchor_and_rest, prob in _BUNDLES:
@@ -82,6 +90,9 @@ def _basket(rng: np.random.Generator) -> list[int]:
             for pid in rest:
                 if rng.random() < prob:
                     items.add(pid)
+    for anchor, partner, p_start, p_end in _TRENDING_PAIRS:
+        if anchor in items and rng.random() < p_start + (p_end - p_start) * year_frac:
+            items.add(partner)
     extra = rng.poisson(1.0)
     for _ in range(extra):
         items.add(int(rng.choice(product_ids)))
@@ -101,7 +112,13 @@ def generate_demo_transactions(n_customers: int = 600, seed: int = 7) -> pd.Data
         rate, value_mult, decays_over_time = rates[a], value_mults[a], decays[a]
         country = str(rng.choice(_COUNTRIES, p=_COUNTRY_WEIGHTS))
 
-        first_day = int(rng.integers(0, int(_DAYS * 0.93)))
+        # About half the customer base already exists when the period starts
+        # (a real store doesn't open with zero customers); the rest arrive
+        # over the year.
+        if rng.random() < 0.45:
+            first_day = int(rng.integers(0, 21))
+        else:
+            first_day = int(rng.integers(0, int(_DAYS * 0.93)))
         purchase_days = [first_day]
 
         if rate > 0:
@@ -119,7 +136,7 @@ def generate_demo_transactions(n_customers: int = 600, seed: int = 7) -> pd.Data
 
         for day in purchase_days:
             date_str = (_START + timedelta(days=day)).strftime("%m/%d/%Y")
-            for pid in _basket(rng):
+            for pid in _basket(rng, day / _DAYS):
                 base = _PRICES[pid]
                 price = round(base * rng.uniform(0.9, 1.1), 2)
                 quantity = max(1, int(rng.poisson(2.0 * value_mult)))

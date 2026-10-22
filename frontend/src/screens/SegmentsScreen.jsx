@@ -1,40 +1,51 @@
 import { useEffect, useMemo, useState } from "react";
-import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { CartesianGrid, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis } from "recharts";
 import { getSegments } from "../api";
+import BarList from "../charts/BarList";
+import ChartCard from "../charts/ChartCard";
+import Heatmap from "../charts/Heatmap";
+import { C, axisTick, cap, fmt, niceTicks, tooltipStyle } from "../charts/theme";
 import DataTable from "../components/DataTable";
 import SegmentFilter, { ALL_VALUE } from "../components/SegmentFilter";
 
 const COLUMNS = [
   { key: "CustomerNo", label: "Müşteri No" },
-  { key: "recency", label: "Recency" },
-  { key: "frequency", label: "Sıklık" },
-  { key: "monetary", label: "Harcama" },
+  { key: "recency", label: "Son alışverişten gün" },
+  { key: "frequency", label: "Alışveriş sayısı" },
+  { key: "monetary", label: "Toplam harcama" },
   { key: "segment", label: "Segment" },
 ];
 
-const PALETTE = ["#4f46e5", "#059669", "#d97706", "#dc2626", "#0891b2", "#7c3aed", "#db2777", "#65a30d", "#ea580c", "#0284c7"];
+function ScatterTip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const p = payload[0].payload;
+  return (
+    <div style={{ ...tooltipStyle, padding: "8px 10px" }}>
+      <strong>Müşteri {p.CustomerNo}</strong>
+      <div>{p.segment}</div>
+      <div>
+        {fmt.int(p.recency)} gün önce, {fmt.int(p.frequency)} alışveriş, {fmt.money(p.monetary)} harcama
+      </div>
+    </div>
+  );
+}
 
-const tooltipStyle = {
-  background: "var(--panel)",
-  border: "1px solid var(--line)",
-  borderRadius: 8,
-  color: "var(--paper)",
-  fontSize: 13,
-};
+export default function SegmentsScreen({ sessionId, settings, onSettingsChange }) {
+  const auto = settings?.auto ?? false;
+  const k = settings?.k ?? 6;
+  const setAuto = (v) => onSettingsChange?.({ ...settings, auto: v });
+  const setK = (v) => onSettingsChange?.({ ...settings, k: v });
 
-export default function SegmentsScreen({ sessionId }) {
-  const [auto, setAuto] = useState(false);
-  const [k, setK] = useState(6);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [selectedSegment, setSelectedSegment] = useState(ALL_VALUE);
+  const [selected, setSelected] = useState(ALL_VALUE);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    setSelectedSegment(ALL_VALUE);
+    setSelected(ALL_VALUE);
     getSegments(sessionId, { k, auto })
       .then((res) => !cancelled && setData(res))
       .catch((err) => !cancelled && setError(err.message))
@@ -44,24 +55,49 @@ export default function SegmentsScreen({ sessionId }) {
     };
   }, [sessionId, k, auto]);
 
-  const segmentOptions = data ? Object.keys(data.segment_counts) : [];
-  const chartData = data
-    ? Object.entries(data.segment_counts).map(([segment, count]) => ({ segment, count }))
-    : [];
+  const derived = useMemo(() => {
+    if (!data) return null;
+    const total = data.rows.length;
+    const sizes = Object.entries(data.segment_counts)
+      .map(([segment, count]) => ({ key: segment, label: segment, value: count }))
+      .sort((a, b) => b.value - a.value);
+    const means = [...data.segment_means].sort((a, b) => b.monetary - a.monetary);
+    const top = means[0];
+    const counts = data.segment_counts;
+    const heatRows = means.map((m) => ({
+      key: m.segment,
+      label: m.segment,
+      values: { size: counts[m.segment], recency: m.recency, frequency: m.frequency, monetary: m.monetary },
+    }));
+    return { total, sizes, top, heatRows };
+  }, [data]);
 
   const filteredRows = useMemo(() => {
     if (!data) return [];
-    if (selectedSegment === ALL_VALUE) return data.rows;
-    return data.rows.filter((row) => row.segment === selectedSegment);
-  }, [data, selectedSegment]);
+    return selected === ALL_VALUE ? data.rows : data.rows.filter((r) => r.segment === selected);
+  }, [data, selected]);
+
+  const scatter = useMemo(() => {
+    if (!data) return { focus: [], context: [] };
+    const rows = data.rows.filter((r) => r.monetary > 0);
+    if (selected === ALL_VALUE) return { focus: rows, context: [] };
+    return { focus: rows.filter((r) => r.segment === selected), context: rows.filter((r) => r.segment !== selected) };
+  }, [data, selected]);
+
+  const recencyTicks = useMemo(
+    () => niceTicks(data ? Math.max(...data.rows.map((r) => r.recency), 1) : 1, 6),
+    [data]
+  );
+
+  const toggle = (seg) => setSelected((cur) => (cur === seg ? ALL_VALUE : seg));
 
   return (
     <div>
       <div className="screen-header">
         <h1 className="screen-title">Müşteri Segmentasyonu</h1>
         <p className="screen-subtitle">
-          K-Means kümeleme ile veri odaklı segmentasyon. Segment sayısını elle seçin ya da elbow yöntemiyle
-          otomatik belirlensin.
+          K-Means, müşterileri son alışveriş zamanı, alışveriş sayısı ve toplam harcamaya göre gruplar. Bir segmente
+          tıklayarak bütün ekranı o gruba odaklayın.
         </p>
       </div>
 
@@ -69,15 +105,8 @@ export default function SegmentsScreen({ sessionId }) {
         <div className="control-group">
           <span className="control-label">Segment sayısı</span>
           <div className="slider-row">
-            <input
-              type="range"
-              min={2}
-              max={10}
-              value={k}
-              disabled={auto}
-              onChange={(e) => setK(Number(e.target.value))}
-            />
-            <span style={{ fontFamily: "var(--font-mono)" }}>{k}</span>
+            <input type="range" min={2} max={10} value={k} disabled={auto} onChange={(e) => setK(Number(e.target.value))} />
+            <span style={{ fontVariantNumeric: "tabular-nums" }}>{auto ? "oto" : k}</span>
           </div>
         </div>
         <div className="control-group">
@@ -93,11 +122,11 @@ export default function SegmentsScreen({ sessionId }) {
         </div>
         {data && (
           <SegmentFilter
-            label="Segment filtrele"
-            options={segmentOptions}
+            label="Odaklanılan segment"
+            options={derived.sizes.map((s) => s.key)}
             counts={data.segment_counts}
-            value={selectedSegment}
-            onChange={setSelectedSegment}
+            value={selected}
+            onChange={setSelected}
           />
         )}
       </div>
@@ -105,41 +134,87 @@ export default function SegmentsScreen({ sessionId }) {
       {loading && <div className="loading-state">Segmentler hesaplanıyor…</div>}
       {error && <div className="error-state">{error}</div>}
 
-      {data && !loading && (
+      {data && !loading && derived && (
         <>
-          <div className="receipt-card" style={{ marginBottom: 24 }}>
-            <p className="receipt-label">Segment Dağılımı — bir dilime tıklayarak filtreleyin</p>
-            <ResponsiveContainer width="100%" height={280}>
-              <PieChart>
-                <Pie
-                  data={chartData}
-                  dataKey="count"
-                  nameKey="segment"
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
-                  paddingAngle={2}
-                  cursor="pointer"
-                  onClick={(entry) =>
-                    setSelectedSegment(entry.segment === selectedSegment ? ALL_VALUE : entry.segment)
-                  }
-                >
-                  {chartData.map((entry, i) => (
-                    <Cell
-                      key={entry.segment}
-                      fill={PALETTE[i % PALETTE.length]}
-                      opacity={selectedSegment === ALL_VALUE || selectedSegment === entry.segment ? 1 : 0.25}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip contentStyle={tooltipStyle} />
-                <Legend wrapperStyle={{ fontSize: 12, color: "var(--paper-dim)" }} />
-              </PieChart>
-            </ResponsiveContainer>
+          <div className="chart-row">
+            <ChartCard
+              title={`En büyük grup: ${derived.sizes[0].label} (${fmt.pct(derived.sizes[0].value / derived.total)})`}
+              subtitle="Segmentlere göre müşteri sayısı. Bir çubuğa tıklayınca diğer grafikler o segmente odaklanır."
+            >
+              <BarList
+                data={derived.sizes}
+                valueFormat={(v) => `${fmt.int(v)} · ${fmt.pct(v / derived.total)}`}
+                selected={selected === ALL_VALUE ? null : selected}
+                onSelect={toggle}
+              />
+            </ChartCard>
+
+            <ChartCard
+              title={`${cap(derived.top.segment)} ortalama ${fmt.money(derived.top.monetary)} harcamayla en değerli grup`}
+              subtitle="Her segmentin ortalama profili. Koyu renk, o sütunda daha iyi müşteri demek (son alışverişte daha az gün daha iyidir)."
+            >
+              <Heatmap
+                rowHeader="Segment"
+                normalize="column"
+                rows={derived.heatRows}
+                columns={[
+                  { key: "recency", label: "Son alışveriş (gün)", format: fmt.int, higherIsBetter: false },
+                  { key: "frequency", label: "Alışveriş sayısı", format: (v) => fmt.dec(v, 1) },
+                  { key: "monetary", label: "Harcama", format: fmt.money },
+                ]}
+              />
+            </ChartCard>
           </div>
+
+          <ChartCard
+            title={
+              selected === ALL_VALUE
+                ? "Müşteriler son alışveriş zamanı ve harcamaya göre"
+                : `${cap(selected)}: ${fmt.int(scatter.focus.length)} müşteri, diğerleri gri`
+            }
+            subtitle="Her nokta bir müşteri. Sol üst köşe yakın zamanda alışveriş yapmış ve çok harcamış müşteriler. Harcama ekseni logaritmik."
+          >
+            <ResponsiveContainer width="100%" height={340}>
+              <ScatterChart margin={{ top: 8, right: 16, bottom: 28, left: 8 }}>
+                <CartesianGrid stroke={C.grid} />
+                <XAxis
+                  type="number"
+                  dataKey="recency"
+                  name="Son alışveriş"
+                  domain={[0, recencyTicks[recencyTicks.length - 1]]}
+                  ticks={recencyTicks}
+                  tick={axisTick}
+                  stroke={C.axis}
+                  label={{ value: "Son alışverişten bu yana geçen gün", position: "insideBottom", offset: -16, fill: C.inkFaint, fontSize: 12 }}
+                />
+                <YAxis
+                  type="number"
+                  dataKey="monetary"
+                  name="Harcama"
+                  scale="log"
+                  domain={["auto", "auto"]}
+                  tick={axisTick}
+                  stroke={C.axis}
+                  tickFormatter={(v) => fmt.money(v)}
+                  width={64}
+                />
+                <Tooltip content={<ScatterTip />} cursor={{ stroke: C.axis }} />
+                {scatter.context.length > 0 && (
+                  <Scatter data={scatter.context} fill={C.muted} fillOpacity={0.45} isAnimationActive={false} shape="circle" />
+                )}
+                <Scatter
+                  data={scatter.focus}
+                  fill={C.series}
+                  fillOpacity={selected === ALL_VALUE ? 0.45 : 0.8}
+                  isAnimationActive={false}
+                  shape="circle"
+                />
+              </ScatterChart>
+            </ResponsiveContainer>
+          </ChartCard>
+
           <DataTable
-            key={`${k}-${auto}-${selectedSegment}`}
+            key={`${k}-${auto}-${selected}`}
             columns={COLUMNS}
             rows={filteredRows}
             exportFilename="musteri_segmentleri.csv"

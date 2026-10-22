@@ -13,24 +13,17 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi.responses import HTMLResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from analyzewise_crm import DEFAULT_CONFIG, load_transactions, search_windows
-from analyzewise_crm.churn import build_churn_training_set, evaluate_churn_model, predict_churn
-from analyzewise_crm.cltv_ml import (
-    build_cltv_training_set,
-    evaluate_cltv_hurdle_model,
-    evaluate_cltv_model,
-    predict_cltv,
-    predict_cltv_hurdle,
-)
 from analyzewise_crm.recommender import (
-    collaborative_filtering_recommend,
-    compute_association_rules,
-    recommend_products,
+    collaborative_filtering_scores,
+    copurchase_trend,
+    recommend_products_scored,
 )
-from analyzewise_crm.segmentation import cluster_customers
 
+from . import analysis, report
 from .demo_data import DEMO_FILENAME, generate_demo_transactions
 from .store import store
 from .utils import df_to_records, safe_jsonable
@@ -168,84 +161,61 @@ def get_overview(session_id: str):
 @app.get("/api/segments")
 def get_segments(session_id: str, k: Optional[int] = Query(None, ge=2, le=10), auto: bool = False):
     session = _get_session(session_id)
-    cache_key = f"segments:{k}:{auto}"
-    cached = store.cache_get(session_id, cache_key)
-    if cached is not None:
-        return cached
-
-    kmeans_k = None if auto else (k or 6)
-    result_df = cluster_customers(session.raw_df, DEFAULT_CONFIG, k=kmeans_k)
-    payload = {
+    result_df = analysis.segments(session_id, session, k, auto)
+    return {
         "rows": df_to_records(result_df),
         "segment_counts": safe_jsonable(result_df["segment"].value_counts().to_dict()),
         "segment_means": df_to_records(result_df.groupby("segment")[["recency", "frequency", "monetary"]].mean()),
     }
-    store.cache_set(session_id, cache_key, payload)
-    return payload
 
 
 @app.get("/api/cltv")
 def get_cltv(session_id: str, approach: str = Query("single", pattern="^(single|hurdle)$")):
     session = _get_session(session_id)
-    cache_key = f"cltv:{approach}"
-    cached = store.cache_get(session_id, cache_key)
-    if cached is not None:
-        return cached
-
-    result_df = predict_cltv_hurdle(session.raw_df, DEFAULT_CONFIG) if approach == "hurdle" else predict_cltv(
-        session.raw_df, DEFAULT_CONFIG
-    )
-    cols = DEFAULT_CONFIG.columns
-    payload = {
+    result_df = analysis.cltv(session_id, session, approach)
+    return {
         "rows": df_to_records(result_df[["predicted_cltv", "frequency", "monetary", "segment"]]),
-        "segment_means": df_to_records(result_df.groupby("segment")["predicted_cltv"].mean().to_frame()),
+        "segment_means": df_to_records(result_df.groupby("segment", observed=True)["predicted_cltv"].mean().to_frame()),
     }
-    store.cache_set(session_id, cache_key, payload)
-    return payload
 
 
 @app.get("/api/cltv/evaluate")
 def get_cltv_evaluate(session_id: str, approach: str = Query("single", pattern="^(single|hurdle)$")):
     session = _get_session(session_id)
-    cache_key = f"cltv_eval:{approach}"
-    cached = store.cache_get(session_id, cache_key)
-    if cached is not None:
-        return cached
-
-    features = build_cltv_training_set(session.raw_df, DEFAULT_CONFIG)
-    metrics = evaluate_cltv_hurdle_model(features) if approach == "hurdle" else evaluate_cltv_model(features)
-    metrics = safe_jsonable(metrics)
-    store.cache_set(session_id, cache_key, metrics)
-    return metrics
+    return safe_jsonable(analysis.cltv_metrics(session_id, session, approach))
 
 
 @app.get("/api/churn")
 def get_churn(session_id: str):
     session = _get_session(session_id)
-    cached = store.cache_get(session_id, "churn")
-    if cached is not None:
-        return cached
-
-    result_df = predict_churn(session.raw_df, DEFAULT_CONFIG)
-    payload = {
+    result_df = analysis.churn(session_id, session)
+    return {
         "rows": df_to_records(result_df[["churn_probability", "recency", "frequency", "risk_segment"]]),
         "risk_counts": safe_jsonable(result_df["risk_segment"].value_counts().to_dict()),
     }
-    store.cache_set(session_id, "churn", payload)
-    return payload
 
 
 @app.get("/api/churn/evaluate")
 def get_churn_evaluate(session_id: str):
     session = _get_session(session_id)
-    cached = store.cache_get(session_id, "churn_eval")
-    if cached is not None:
-        return cached
+    return safe_jsonable(analysis.churn_metrics(session_id, session))
 
-    features = build_churn_training_set(session.raw_df, DEFAULT_CONFIG)
-    metrics = safe_jsonable(evaluate_churn_model(features))
-    store.cache_set(session_id, "churn_eval", metrics)
-    return metrics
+
+@app.get("/api/value-risk")
+def get_value_risk(session_id: str, approach: str = Query("single", pattern="^(single|hurdle)$")):
+    """Churn probability × historical spend per customer, plus the
+    priority list: customers who spent a lot and are likely to leave."""
+    session = _get_session(session_id)
+    joined = analysis.value_risk(session_id, session, approach)
+    priority = joined[joined["quadrant"] == "değerli, riskte"].sort_values("historical_spend", ascending=False)
+    return {
+        "rows": df_to_records(joined[["churn_probability", "historical_spend", "quadrant"]]),
+        "quadrant_counts": safe_jsonable(joined["quadrant"].value_counts().to_dict()),
+        "thresholds": {"risk": analysis.HIGH_RISK, "value": safe_jsonable(joined.attrs.get("value_cut", 0.0))},
+        "priority": df_to_records(priority.head(25)),
+        "priority_total_value": safe_jsonable(float(priority["historical_spend"].sum())),
+        "priority_count": int(len(priority)),
+    }
 
 
 @app.get("/api/products")
@@ -253,9 +223,16 @@ def get_products(session_id: str):
     session = _get_session(session_id)
     col = DEFAULT_CONFIG.columns.product_id
     if col not in session.raw_df.columns:
-        return {"products": []}
+        return {"products": [], "names": {}}
+    names = analysis.product_names(session)
     ids = sorted(session.raw_df[col].dropna().unique().tolist())
-    return {"products": safe_jsonable(ids)}
+    basket_counts = session.raw_df.groupby(col)[DEFAULT_CONFIG.columns.transaction_id].nunique()
+    popular = basket_counts.sort_values(ascending=False).head(10).index.tolist()
+    return {
+        "products": safe_jsonable(ids),
+        "names": {str(k): v for k, v in safe_jsonable(names).items()},
+        "popular": safe_jsonable(popular),
+    }
 
 
 @app.get("/api/recommendations")
@@ -267,17 +244,56 @@ def get_recommendations(
 ):
     session = _get_session(session_id)
     pid = _coerce_product_id(session.raw_df, product_id)
+    names = analysis.product_names(session)
 
     if method == "fpgrowth":
-        rules = store.cache_get(session_id, "rules")
-        if rules is None:
-            rules = compute_association_rules(session.raw_df, DEFAULT_CONFIG)
-            store.cache_set(session_id, "rules", rules)
-        recs = recommend_products(rules, pid, top_n)
+        scored = recommend_products_scored(analysis.rules(session_id, session), pid, top_n)
+        score_col = "lift"
     else:
-        recs = collaborative_filtering_recommend(session.raw_df, DEFAULT_CONFIG, pid, top_n)
+        scored = collaborative_filtering_scores(session.raw_df, DEFAULT_CONFIG, pid, top_n)
+        score_col = "similarity"
 
-    return {"recommendations": safe_jsonable(list(recs))}
+    items = [
+        {
+            "product_id": row["product"],
+            "name": names.get(row["product"], str(row["product"])),
+            "score": row[score_col],
+            **({"confidence": row["confidence"], "support": row["support"]} if method == "fpgrowth" else {}),
+        }
+        for row in scored.to_dict(orient="records")
+    ]
+    return safe_jsonable(
+        {
+            "recommendations": [i["product_id"] for i in items],
+            "items": items,
+            "score_label": "Lift" if method == "fpgrowth" else "Benzerlik (kosinüs)",
+            "anchor_name": names.get(pid, str(pid)),
+        }
+    )
+
+
+@app.get("/api/recommendations/trend")
+def get_recommendation_trend(session_id: str, product_id: str, top_n: int = Query(8, ge=2, le=12)):
+    """Paired data for the co-purchase slopegraph (first vs second half)."""
+    session = _get_session(session_id)
+    pid = _coerce_product_id(session.raw_df, product_id)
+    names = analysis.product_names(session)
+    trend = copurchase_trend(session.raw_df, DEFAULT_CONFIG, pid, top_n)
+    rows = trend["rows"]
+    items = (
+        [
+            {
+                "product_id": r["product"],
+                "name": names.get(r["product"], str(r["product"])),
+                "first": r["rate_first"],
+                "second": r["rate_second"],
+            }
+            for r in rows.to_dict(orient="records")
+        ]
+        if len(rows)
+        else []
+    )
+    return safe_jsonable({"items": items, "periods": trend["periods"], "anchor_baskets": trend["anchor_baskets"]})
 
 
 @app.get("/api/windows/search")
@@ -299,3 +315,40 @@ def search_window_options(session_id: str):
     payload = {"rows": df_to_records(results)}
     store.cache_set(session_id, "window_search", payload)
     return payload
+
+
+def _report_context(session_id: str, k: Optional[int], auto: bool, approach: str) -> dict:
+    session = _get_session(session_id)
+    return report.build_context(session_id, session, k, auto, approach)
+
+
+@app.get("/api/report", response_class=HTMLResponse)
+def get_report(
+    session_id: str,
+    k: Optional[int] = Query(None, ge=2, le=10),
+    auto: bool = False,
+    approach: str = Query("single", pattern="^(single|hurdle)$"),
+    download: bool = False,
+):
+    """Self-contained HTML CRM report built from the same cached analyses
+    the screens use, with the settings the user picked there."""
+    content = report.render_html(_report_context(session_id, k, auto, approach))
+    headers = {"Content-Disposition": 'attachment; filename="crm_raporu.html"'} if download else {}
+    return HTMLResponse(content=content, headers=headers)
+
+
+@app.get("/api/report.xlsx")
+def get_report_xlsx(
+    session_id: str,
+    k: Optional[int] = Query(None, ge=2, le=10),
+    auto: bool = False,
+    approach: str = Query("single", pattern="^(single|hurdle)$"),
+):
+    """Excel workbook with the report's lists: summary, segments with
+    actions, every customer with all scores, win-back list, product pairs."""
+    data = report.render_xlsx(_report_context(session_id, k, auto, approach))
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="crm_raporu.xlsx"'},
+    )

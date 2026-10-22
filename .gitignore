@@ -26,3 +26,7 @@ frontend/.env
 .DS_Store
 *.log
 "@ | Set-Content .gitignore
+# python bytecode and test caches anywhere in the repo
+__pycache__/
+*.pyc
+.pytest_cache/

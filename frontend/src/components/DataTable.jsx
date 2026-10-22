@@ -1,20 +1,29 @@
 import { useState } from "react";
 import { downloadCsv } from "../csv";
 
-const BADGE_COLUMNS = new Set(["segment", "risk_segment"]);
+const BADGE_COLUMNS = new Set(["segment", "risk_segment", "quadrant"]);
 
-function badgeClass(value) {
+// Status colors (green → red) are reserved for columns whose values *mean*
+// good/bad: churn risk bands, and the one risk × value quadrant that needs
+// action. Segment names and value tiers are identities, not states, so they
+// get a neutral badge — "very high" CLTV must never render in red.
+function badgeClass(column, value) {
   const v = String(value).toLowerCase();
-  if (v.includes("düşük")) return "risk-dusuk";
-  if (v.includes("orta")) return "risk-orta";
-  if (v.includes("çok")) return "risk-cok";
-  if (v.includes("yüksek") || v === "very high" || v === "high") return "risk-yuksek";
-  if (v === "low" || v === "mid") return "risk-dusuk";
-  return "risk-orta";
+  if (column === "risk_segment") {
+    if (v.startsWith("düşük")) return "risk-dusuk";
+    if (v.startsWith("orta")) return "risk-orta";
+    if (v.startsWith("çok")) return "risk-cok";
+    return "risk-yuksek";
+  }
+  if (column === "quadrant" && v === "değerli, riskte") return "risk-cok";
+  return "badge-neutral";
 }
 
 // Identifier columns are labels, not quantities — "12346" must not render as "12.346"
-const ID_COLUMNS = new Set(["CustomerNo", "TransactionNo", "ProductNo"]);
+const ID_COLUMNS = new Set(["CustomerNo", "TransactionNo", "ProductNo", "product_id"]);
+
+// Amounts keep two decimals so a column never mixes "781" and "1.239,93"
+const MONEY_COLUMNS = new Set(["monetary", "historical_spend", "predicted_cltv"]);
 
 // 0–1 probabilities read better as percentages, and 1.0 must not collapse to "1"
 const PROBABILITY_COLUMNS = new Set(["churn_probability"]);
@@ -24,7 +33,10 @@ function formatCell(value, key) {
   if (ID_COLUMNS.has(key)) return String(value);
   if (PROBABILITY_COLUMNS.has(key) && typeof value === "number") return `%${Math.round(value * 100)}`;
   if (typeof value === "number") {
-    return Number.isInteger(value) ? value.toLocaleString("tr-TR") : value.toFixed(2);
+    if (MONEY_COLUMNS.has(key)) return value.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return Number.isInteger(value)
+      ? value.toLocaleString("tr-TR")
+      : value.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
   return String(value);
 }
@@ -68,7 +80,7 @@ export default function DataTable({ columns, rows, pageSize = 15, exportFilename
                 {columns.map((col) => (
                   <td key={col.key}>
                     {BADGE_COLUMNS.has(col.key) ? (
-                      <span className={`badge ${badgeClass(row[col.key])}`}>{row[col.key]}</span>
+                      <span className={`badge ${badgeClass(col.key, row[col.key])}`}>{row[col.key]}</span>
                     ) : (
                       formatCell(row[col.key], col.key)
                     )}

@@ -5,9 +5,10 @@ const NAV_ITEMS = [
   { id: "churn", label: "Churn Tahmini", icon: "⚠️" },
   { id: "recommendations", label: "Ürün Önerisi", icon: "🎯" },
   { id: "windows", label: "Pencere Araması", icon: "🔍" },
+  { id: "report", label: "CRM Raporu", icon: "📄" },
 ];
 
-export default function Sidebar({ active, onSelect, hasSession, onHome }) {
+export default function Sidebar({ active, onSelect, hasSession, onHome, reportStatus }) {
   return (
     <aside className="sidebar">
       <button className="sidebar-brand" onClick={onHome} title="Tanıtım sayfasına dön">
@@ -33,6 +34,7 @@ export default function Sidebar({ active, onSelect, hasSession, onHome }) {
           >
             <span className="sidebar-nav-icon">{item.icon}</span>
             {item.label}
+            {item.id === "report" && reportStatus === "ready" && <span className="nav-dot" aria-label="hazır" />}
           </button>
         ))}
       </nav>

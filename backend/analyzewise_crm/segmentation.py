@@ -68,17 +68,55 @@ def find_optimal_k(X: np.ndarray, k_range=range(2, 11), random_state: int = 42) 
     return int(ks[best_idx])
 
 
-def _label_clusters(centroids: pd.DataFrame) -> dict:
-    """Rank clusters by a weighted RFM score (low recency + high
-    frequency + high monetary = best) and map them to interpretable
-    Turkish labels, reusing the original app's segment vocabulary.
+# Where each name sits on the classic RFM grid (R = recency score, F =
+# frequency score, both 1–5, 5 = best), matching the original app's
+# regex map: 5[4-5] champions, [3-4][4-5] loyal, [4-5][2-3] potential
+# loyalists, 51 new, 41 promising, 33 need attention, 3[1-2] about to
+# sleep, [1-2][3-4] at risk, [1-2]5 can't lose, [1-2][1-2] hibernating.
+SEGMENT_GRID = {
+    "şampiyonlar": (5.0, 4.5),
+    "sadık müşteriler": (3.5, 4.5),
+    "potansiyel sadıklar": (4.5, 2.5),
+    "yeni müşteriler": (5.0, 1.0),
+    "umut veren": (4.0, 1.0),
+    "ilgi gerek": (3.0, 3.0),
+    "uykuya yakın": (3.0, 1.5),
+    "riskte olanlar": (1.5, 3.5),
+    "kaybedilmemeli": (1.5, 5.0),
+    "kış uykusundakiler": (1.5, 1.5),
+}
+
+
+def _rf_scores(centroids: pd.DataFrame, customers: pd.DataFrame) -> np.ndarray:
+    """Continuous 1–5 R and F scores for each centroid, from where it falls
+    in the customer distribution (lower recency is better)."""
+    rec = np.sort(customers["recency"].to_numpy())
+    freq = np.sort(customers["frequency"].to_numpy())
+    r_pct = np.searchsorted(rec, centroids["recency"].to_numpy(), side="right") / len(rec)
+    f_pct = np.searchsorted(freq, centroids["frequency"].to_numpy(), side="right") / len(freq)
+    return np.column_stack([1 + 4 * (1 - r_pct), 1 + 4 * f_pct])
+
+
+def _label_clusters(centroids: pd.DataFrame, customers: pd.DataFrame) -> dict:
+    """Give each cluster the RFM segment name whose grid position is
+    closest to the cluster's own R/F scores, each name used once (an
+    assignment problem). Naming by a single "overall score" rank instead
+    mislabels clusters — e.g. a cluster that bought often but stopped long
+    ago would be called "yeni müşteriler".
     """
-    score = -centroids["recency"].rank() + centroids["frequency"].rank() + centroids["monetary"].rank()
-    ranked = score.sort_values(ascending=False).index.tolist()
-    return {
-        cluster_id: SEGMENT_NAMES[i] if i < len(SEGMENT_NAMES) else f"segment {i + 1}"
-        for i, cluster_id in enumerate(ranked)
-    }
+    from scipy.optimize import linear_sum_assignment
+
+    ids = centroids.index.tolist()
+    if len(ids) > len(SEGMENT_NAMES):
+        score = -centroids["recency"].rank() + centroids["frequency"].rank() + centroids["monetary"].rank()
+        ranked = score.sort_values(ascending=False).index.tolist()
+        return {cid: (SEGMENT_NAMES[i] if i < len(SEGMENT_NAMES) else f"segment {i + 1}") for i, cid in enumerate(ranked)}
+
+    scores = _rf_scores(centroids, customers)
+    grid = np.array([SEGMENT_GRID[name] for name in SEGMENT_NAMES])
+    cost = ((scores[:, None, :] - grid[None, :, :]) ** 2).sum(axis=2)
+    rows, cols = linear_sum_assignment(cost)
+    return {ids[r]: SEGMENT_NAMES[c] for r, c in zip(rows, cols)}
 
 
 def cluster_customers(
@@ -110,7 +148,7 @@ def cluster_customers(
     features["cluster"] = km.fit_predict(X_scaled)
 
     centroids = features.groupby("cluster")[FEATURE_COLUMNS].mean()
-    label_map = _label_clusters(centroids)
+    label_map = _label_clusters(centroids, features)
     features["segment"] = features["cluster"].map(label_map)
 
     return features[["recency", "frequency", "monetary", "cluster", "segment"]]
