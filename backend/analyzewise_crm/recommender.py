@@ -41,7 +41,9 @@ def compute_association_rules(
     cols = config.columns
     df = raw_df
     country = country if country is not None else config.arl_country_filter
-    if country and cols.country in df.columns:
+    # Only narrow to the configured country when the data actually has it;
+    # a dataset from another market would otherwise produce no rules at all.
+    if country and cols.country in df.columns and (df[cols.country] == country).any():
         df = df[df[cols.country] == country]
 
     matrix = _invoice_product_matrix(df, config, by_id=by_id)

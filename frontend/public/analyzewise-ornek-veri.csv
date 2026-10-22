@@ -1,0 +1,16 @@
+﻿TransactionNo,Date,CustomerNo,ProductNo,ProductName,Quantity,Price,Country
+505257,2019-01-11,12593,1020,Defter A5,1,4.33,France
+504787,2019-01-14,12546,1007,Dekoratif Vazo,1,25.1,United Kingdom
+504787,2019-01-14,12546,1013,Mutfak Önlüğü,3,10.93,United Kingdom
+501710,2019-01-17,12192,1023,Hediye Kutusu,3,6.1,Germany
+501710,2019-01-17,12192,1024,Hediye Paketi Kağıdı,4,3.22,Germany
+501710,2019-01-17,12192,1027,Duvar Saati,3,29.93,Germany
+504788,2019-01-17,12546,1001,Çay Bardağı Seti,6,17.34,United Kingdom
+504788,2019-01-17,12546,1002,Demlik,3,20.35,United Kingdom
+504788,2019-01-17,12546,1003,Kahve Fincanı,1,9.33,United Kingdom
+504788,2019-01-17,12546,1015,Saklama Kabı,1,9.68,United Kingdom
+501711,2019-01-24,12192,1011,Pamuk Havlu,3,16.82,Germany
+501711,2019-01-24,12192,1027,Duvar Saati,3,28.83,Germany
+501711,2019-01-24,12192,1028,Masa Lambası,2,28.8,Germany
+505258,2019-03-23,12593,1013,Mutfak Önlüğü,5,12.72,France
+505258,2019-03-23,12593,1018,Kesme Tahtası,3,12.42,France

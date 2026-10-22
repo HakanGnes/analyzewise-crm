@@ -641,12 +641,18 @@ button.sidebar-brand:hover .sidebar-brand-mark {
 
 .upload-help {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 2.4fr) minmax(220px, 1fr);
   gap: 24px;
   margin-top: 24px;
+  align-items: start;
 }
 
-.upload-help > div {
+.upload-help > * {
+  min-width: 0;
+}
+
+.upload-help > div,
+.upload-help > section {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -682,10 +688,116 @@ button.sidebar-brand:hover .sidebar-brand-mark {
   color: var(--text);
 }
 
-@media (max-width: 720px) {
+@media (max-width: 960px) {
   .upload-help {
     grid-template-columns: 1fr;
   }
+}
+
+.format-guide-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.format-guide-head .upload-help-text {
+  margin-bottom: 0;
+  max-width: 52ch;
+}
+
+.format-guide-downloads {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.format-guide-downloads a {
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.format-table td {
+  vertical-align: top;
+  font-size: 13px;
+}
+
+.format-table code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.format-aliases {
+  display: block;
+  font-size: 12px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+.format-example {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
+.format-table .badge {
+  white-space: nowrap;
+}
+
+/* Narrow screens: each column becomes a small stacked card instead of a
+   four-column table squeezed into 350px. */
+@media (max-width: 640px) {
+  .format-table thead {
+    display: none;
+  }
+  .format-table tr {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 4px 12px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .format-table tbody tr:last-child {
+    border-bottom: none;
+  }
+  .format-table td {
+    display: block;
+    padding: 0;
+    border: none;
+  }
+  .format-table td:nth-child(3) {
+    grid-column: 1 / -1;
+  }
+  .format-table td:nth-child(4) {
+    display: none;
+  }
+}
+
+.badge.badge-required {
+  background: var(--primary-soft);
+  color: var(--primary);
+  border: 1px solid #c7d2fe;
+}
+
+.format-rules {
+  margin: 14px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.65;
+}
+
+.format-rules li + li {
+  margin-top: 6px;
+}
+
+.format-rules strong {
+  color: var(--text);
+  font-weight: 600;
 }
 
 .badge.badge-neutral {

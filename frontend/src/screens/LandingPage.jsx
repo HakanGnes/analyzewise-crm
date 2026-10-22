@@ -29,7 +29,8 @@ const MODULES = [
 const STEPS = [
   {
     title: "Dosyanı yükle",
-    text: "Excel ya da CSV. Müşteri no, işlem no, adet, fiyat ve tarih kolonları yeterli; ürün no varsa öneri ekranı da açılır.",
+    text: "Excel ya da CSV. Müşteri no, fatura no, tarih, adet ve fiyat kolonları yeterli; ürün kodu varsa öneri ekranı da açılır. En az 6 aylık, tercihen 1 yıllık satış verisi.",
+    link: { href: "/analyzewise-ornek-veri.xlsx", label: "Örnek şablonu indir (.xlsx)" },
   },
   {
     title: "Modeller verinle eğitilir",
@@ -158,6 +159,11 @@ export default function LandingPage({ onStartDemo, onUpload, demoLoading, demoEr
                   </span>
                   <h3>{s.title}</h3>
                   <p>{s.text}</p>
+                  {s.link && (
+                    <a className="lp-step-link" href={s.link.href} download>
+                      {s.link.label}
+                    </a>
+                  )}
                 </li>
               ))}
             </ol>

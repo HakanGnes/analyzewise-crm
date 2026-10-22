@@ -41,6 +41,29 @@ planlanan ürün gruplarını bulur.
 Tanıtım sayfası açılır açılmaz backend'e bir `health` isteği gönderir; Render
 ücretsiz katmanında uyuyan sunucu, ziyaretçi sayfayı okurken uyanmaya başlar.
 
+## Veri formatı
+
+Yükleme ekranında kolon rehberi ve indirilebilir örnek şablon var
+(`frontend/public/analyzewise-ornek-veri.xlsx` / `.csv`, sentetik veri).
+
+| Kolon | Gerekli | Kabul edilen diğer adlar |
+|---|---|---|
+| `CustomerNo` | zorunlu | Müşteri No, CustomerID |
+| `TransactionNo` | zorunlu | Fatura No, Sipariş No, InvoiceNo, OrderID |
+| `Date` | zorunlu | Tarih, InvoiceDate, OrderDate |
+| `Quantity` | zorunlu | Adet, Miktar, Qty |
+| `Price` | zorunlu | Birim Fiyat, Fiyat, UnitPrice |
+| `ProductNo` | ürün önerisi için | Ürün Kodu, Stok Kodu, StockCode, SKU |
+| `ProductName` | isteğe bağlı | Ürün Adı, Description |
+| `Country` | isteğe bağlı | Ülke |
+
+`load_transactions` dosyayı yükleme anında doğrular ve sorunları Türkçe
+mesajla döner: eksik kolon, okunamayan tarih, 180 günden kısa veri. Tarih
+için Excel tarih hücresi ya da 2026-10-22 / 22.10.2026 / 22/10/2026 /
+10/22/2026 kabul edilir; CSV'de `;` ayırıcı ve `20,35` gibi virgüllü sayılar
+da okunur. Ülke filtresi (`arl_country_filter`) veride o ülke yoksa
+uygulanmaz.
+
 ## Görselleştirme ve otomatik CRM raporu
 
 Grafik seçimleri Claus Wilke'nin *Fundamentals of Data Visualization*
@@ -100,7 +123,7 @@ pip install -r requirements-dev.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-Test: `pytest -v` (12 test, ~50 saniye — model eğitimi içerdiği için).
+Test: `pytest -v` (31 test, ~30 saniye — model eğitimi içerdiği için).
 
 ### Frontend
 

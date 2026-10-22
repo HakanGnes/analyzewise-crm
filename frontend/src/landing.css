@@ -378,6 +378,16 @@
   color: var(--lp-ink-soft);
 }
 
+.lp-step-link {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--lp-indigo);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 /* ---------- closing ---------- */
 
 .lp-closing {
